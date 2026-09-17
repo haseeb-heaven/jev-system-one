@@ -18,37 +18,45 @@ A polished terminal interface where OpenAI generates useful answers and TypeSafe
 ## How it works
 
 ```text
-Plain-English question
+Plain-English question (Human involved once)
         ↓
-Jev decides response mode, clarification, uncertainty, and depth
+[LangGraph] Jev decides response mode, clarification, uncertainty, and depth
+        ↓ (if clarification required) → OpenAI resolves ambiguities autonomously
         ↓
-OpenAI drafts from Jev's decision
+[LangGraph] OpenAI drafts from Jev's decision
         ↓
-Jev reviews and scores the draft
+[LangGraph] Jev reviews and scores the draft
+        ↓ (if revision required) ↺ OpenAI revises per Jev critique (autonomous loop)
         ↓
-OpenAI finalizes from Jev's review
+[LangGraph] OpenAI finalizes from Jev's review
         ↓
 The TUI presents the answer and decision report side by side
 ```
 
-## Jev as the decision engine
+## Jev as the decision engine with LangGraph
 
-[TypeSafe](https://typesafe.ai/) System One models are designed for fast, structured software decisions. [Jev](https://docs.typesafe.ai/concepts/system-one) is the authority for response policy and quality review; it returns typed judgments, probabilities, and confidence. OpenAI never classifies the request or sets the policy—it only drafts and finalizes wording from Jev's decisions.
+[TypeSafe](https://typesafe.ai/) System One models are designed for fast, structured software decisions. [Jev](https://docs.typesafe.ai/concepts/system-one) is the authority for response policy and quality review; it returns typed judgments, probabilities, and confidence. OpenAI never classifies the request or sets the policy—it only drafts, revises, and finalizes wording from Jev's decisions.
+
+Orchestrated using **LangGraph**, the pipeline ensures the human user is involved only once. If Jev flags that a question requires clarification, or that a draft requires revision, LangGraph routes internally to OpenAI to resolve ambiguities and refine the draft without interrupting the user:
 
 ```mermaid
 flowchart TD
-    U[Human asks a question in plain English] --> J1[TypeSafe Jev: routing decision]
+    U[Human asks a question once] --> J1[TypeSafe Jev: routing decision]
     J1 --> D1[Choice: response mode]
     J1 --> D2[Noul: clarification required]
     J1 --> D3[Noul: uncertainty notice required]
     J1 --> D4[Score: response depth]
-    J1 --> O1[OpenAI drafts using Jev policy]
+    J1 -->|clarification required| C1[OpenAI: resolve ambiguity autonomously]
+    C1 --> O1[OpenAI: draft using Jev policy]
+    J1 -->|clear| O1
     O1 --> J2[TypeSafe Jev: draft review]
     J2 --> R1[Noul: answers the question]
     J2 --> R2[Noul: unsupported claims]
     J2 --> R3[Score: answer quality]
     J2 --> R4[Noul: revision required]
-    J2 --> O2[OpenAI finalizes using Jev review]
+    J2 -->|revision required| Rev[OpenAI: revise per Jev critique]
+    Rev --> J2
+    J2 -->|approved or max iterations| O2[OpenAI: finalize using Jev review]
     O2 --> T[TUI answer pane]
     J1 --> Report[TUI decision trail]
     J2 --> Report

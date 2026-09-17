@@ -13,7 +13,7 @@ class Planner:
         self.client = OpenAI(api_key=api_key)
         self.model = model
 
-    def draft(
+    def resolve_clarification(
         self,
         question: str,
         routing: dict[str, Any],
@@ -21,9 +21,10 @@ class Planner:
         history: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         return self._generate(
-            "Write a draft answer using Jev's routing decision as the sole authority for "
-            "response mode, clarification, uncertainty, and depth. "
-            "If the question is a follow-up, interpret it within the ongoing conversation.",
+            "Jev determined this question has ambiguities or requires clarification. "
+            "Resolve the clarification autonomously without asking the user. "
+            "Identify the missing details, select the most common/reasonable interpretation, "
+            "and list the explicit assumptions made.",
             {
                 "user_question": question,
                 "conversation_history": [
@@ -33,10 +34,77 @@ class Planner:
                 "jev_routing_decision": routing,
                 "jev_routing_policy": routing_policy,
                 "rules": [
-                    "Do not independently classify the question or decide response policy.",
-                    "Follow the Jev decision probabilities and scores supplied in the state.",
-                    "Use conversation_history to resolve follow-ups, pronouns, or clarifications.",
-                    "Generate answer text only; Jev will review it before it is shown.",
+                    "Do NOT ask the user any questions. The user cannot be asked follow-ups.",
+                    "Resolve ambiguity by selecting the most helpful, standard interpretation.",
+                    "Record assumptions clearly in the assumptions list.",
+                ],
+            },
+            history=history,
+        )
+
+    def draft(
+        self,
+        question: str,
+        routing: dict[str, Any],
+        routing_policy: dict[str, Any],
+        clarifications: dict[str, Any] | None = None,
+        history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        state: dict[str, Any] = {
+            "user_question": question,
+            "conversation_history": [
+                {"question": item.get("question", ""), "answer": item.get("answer", "")}
+                for item in (history or [])
+            ],
+            "jev_routing_decision": routing,
+            "jev_routing_policy": routing_policy,
+            "rules": [
+                "Do not independently classify the question or decide response policy.",
+                "Follow the Jev decision probabilities and scores supplied in the state.",
+                "Do NOT ask the user follow-up questions. Answer directly.",
+                "Use conversation_history to resolve follow-ups, pronouns, or clarifications.",
+                "Generate answer text only; Jev will review it before it is shown.",
+            ],
+        }
+        if clarifications:
+            state["resolved_clarifications"] = clarifications
+        return self._generate(
+            "Write a draft answer using Jev's routing decision as the sole authority for "
+            "response mode, clarification, uncertainty, and depth. "
+            "Never ask the user follow-up questions.",
+            state,
+            history=history,
+        )
+
+    def revise(
+        self,
+        question: str,
+        routing: dict[str, Any],
+        routing_policy: dict[str, Any],
+        draft: dict[str, Any],
+        review: dict[str, Any],
+        review_policy: dict[str, Any],
+        history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        return self._generate(
+            "Revise the draft answer to satisfy Jev's review feedback. "
+            "Address any unsupported claims, low quality scores, or missing information "
+            "flagged by Jev.",
+            {
+                "user_question": question,
+                "conversation_history": [
+                    {"question": item.get("question", ""), "answer": item.get("answer", "")}
+                    for item in (history or [])
+                ],
+                "jev_routing_decision": routing,
+                "jev_routing_policy": routing_policy,
+                "previous_draft": draft,
+                "jev_draft_review": review,
+                "jev_review_policy": review_policy,
+                "rules": [
+                    "Fix any weaknesses or unsupported claims identified by Jev.",
+                    "Do NOT ask the user questions; provide the comprehensive answer.",
+                    "Update assumptions if needed.",
                 ],
             },
             history=history,
@@ -55,7 +123,7 @@ class Planner:
         return self._generate(
             "Write the final answer. Jev owns every decision: use its routing decision and "
             "draft review exactly as supplied. Do not override them or make new policy decisions. "
-            "Ensure the answer fits naturally into the ongoing conversation.",
+            "The final answer must be complete and direct—never ask the user for clarification.",
             {
                 "user_question": question,
                 "conversation_history": [
@@ -68,13 +136,9 @@ class Planner:
                 "jev_draft_review": review,
                 "jev_review_policy": review_policy,
                 "rules": [
-                    "Use the Jev answer-quality score and probabilities to revise the draft.",
-                    "If Jev flags unsupported claims, remove or qualify them.",
-                    (
-                        "If Jev requires clarification, ask the concise clarification instead "
-                        "of guessing."
-                    ),
-                    "Maintain conversational context from prior turns when answering follow-ups.",
+                    "Use the Jev answer-quality score and probabilities to polish the draft.",
+                    "If Jev flagged unsupported claims, ensure they are qualified or removed.",
+                    "Do NOT ask the user any questions. Provide a complete, helpful answer.",
                     "Return answer wording only; do not explain or alter Jev's decisions.",
                 ],
             },
