@@ -35,7 +35,10 @@ The full-screen TUI supports:
 - animated OpenAI and Jev thinking states;
 - a two-stage progress bar;
 - conversation history and a detailed decision panel;
+- mouse wheel or `Page Up`/`Page Down` to scroll the current answer;
 - `Ctrl+L` to clear, `Ctrl+R` to focus the input, and `Ctrl+Q` to quit.
+
+Each new question replaces the previous answer and Jev report, keeping the interface focused on the current request.
 
 For a non-interactive single question:
 
