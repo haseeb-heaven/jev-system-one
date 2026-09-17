@@ -22,15 +22,26 @@ class Workflow:
     def run(
         self,
         question: str,
+        history: list[dict[str, Any]] | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> WorkflowResult:
         self._progress(on_progress, 0, "Jev is deciding the response policy…")
-        routing = self.jev.decide(question)
+        routing = self.jev.decide(question, history=history)
         routing_policy = self.jev.routing_policy(routing)
         self._progress(on_progress, 1, "OpenAI is drafting from Jev's decision…")
-        draft = self.planner.draft(question, routing, routing_policy)
+        draft = self.planner.draft(
+            question,
+            routing,
+            routing_policy,
+            history=history,
+        )
         self._progress(on_progress, 2, "Jev is reviewing and scoring the draft…")
-        review = self.jev.review(question, draft, routing)
+        review = self.jev.review(
+            question,
+            draft,
+            routing,
+            history=history,
+        )
         review_policy = self.jev.review_policy(review)
         self._progress(on_progress, 3, "OpenAI is finalizing from Jev's review…")
         response = self.planner.finalize(
@@ -40,6 +51,7 @@ class Workflow:
             draft,
             review,
             review_policy,
+            history=history,
         )
         self._progress(on_progress, 4, "Complete")
         return WorkflowResult(response, {"routing": routing, "review": review})

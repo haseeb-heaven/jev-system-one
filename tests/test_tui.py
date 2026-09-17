@@ -31,8 +31,9 @@ def test_tui_starts(monkeypatch):
             )
             await pilot.pause()
             answer = pilot.app.query_one("#answer").source
+            assert "first answer" in answer
             assert "second answer" in answer
-            assert "first answer" not in answer
+            assert len(pilot.app.history) == 2
             answer_widget = pilot.app.query_one("#answer")
             conversation = pilot.app.query_one("#conversation")
             answer_widget.update("\n\n".join(f"Long line {index}" for index in range(100)))

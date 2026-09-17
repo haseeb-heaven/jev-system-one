@@ -76,6 +76,7 @@ class JevApp(App[None]):
     def __init__(self) -> None:
         super().__init__()
         self.settings: Settings | None = None
+        self.history: list[dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -129,7 +130,7 @@ class JevApp(App[None]):
         self.query_one("#thinking", LoadingIndicator).display = True
         self.query_one("#progress", ProgressBar).display = True
         self.query_one("#progress", ProgressBar).update(progress=0)
-        self.query_one("#answer", Markdown).update(f"## You\n\n{question}\n\n*Thinking…*")
+        self._update_conversation_display(pending_question=question)
         self.query_one("#decision-content", Markdown).update("*Waiting for Jev…*")
         self.query_one("#status", Static).update("Jev is deciding the response policy…")
         self.process_question(question)
@@ -142,6 +143,7 @@ class JevApp(App[None]):
             with DecisionEngine(self.settings.jev_api_key, self.settings.jev_model) as jev:
                 result = Workflow(planner, jev).run(
                     question,
+                    history=self.history,
                     on_progress=lambda step, message: self.call_from_thread(
                         self._stage,
                         step,
@@ -162,29 +164,47 @@ class JevApp(App[None]):
         self.query_one("#progress", ProgressBar).update(progress=progress)
         self.query_one("#status", Static).update(status)
 
+    def _update_conversation_display(self, pending_question: str | None = None) -> None:
+        blocks: list[str] = []
+        for turn in self.history:
+            assumptions = turn.get("assumptions") or []
+            assumption_text = ""
+            if assumptions:
+                assumption_text = "\n\n**Assumptions**\n" + "\n".join(
+                    f"- {item}" for item in assumptions
+                )
+            blocks.append(
+                f"## You\n\n{turn['question']}\n\n## Answer\n\n{turn['answer']}{assumption_text}"
+            )
+        if pending_question:
+            blocks.append(f"## You\n\n{pending_question}\n\n*Thinking…*")
+
+        content = "\n\n---\n\n".join(blocks) if blocks else "*Your answer will appear here.*"
+        self.query_one("#answer", Markdown).update(content)
+
     def _render_result(
         self,
         question: str,
         response: dict[str, Any],
         decisions: dict[str, Any],
     ) -> None:
-        assumptions = response.get("assumptions") or []
-        assumption_text = ""
-        if assumptions:
-            assumption_text = "\n\n**Assumptions**\n" + "\n".join(
-                f"- {item}" for item in assumptions
-            )
-        content = (
-            f"## You\n\n{question}\n\n## Answer\n\n{response['answer']}{assumption_text}"
+        self.history.append(
+            {
+                "question": question,
+                "answer": response["answer"],
+                "assumptions": response.get("assumptions") or [],
+                "decisions": decisions,
+            }
         )
-        self.query_one("#answer", Markdown).update(content)
+        self._update_conversation_display()
         self.query_one("#decision-content", Markdown).update(self._decision_markdown(decisions))
-        self.query_one("#conversation", ScrollPane).scroll_home(animate=False)
+        self.query_one("#conversation", ScrollPane).scroll_end(animate=False)
         self.query_one("#decisions", ScrollPane).scroll_home(animate=False)
         self.query_one("#progress", ProgressBar).update(progress=4)
         self._finish("Complete · Jev decisions guided the final answer")
 
     def _render_error(self, message: str) -> None:
+        self._update_conversation_display()
         self._finish(f"Error · {message}")
         self.notify(message, severity="error", timeout=8)
 
@@ -213,6 +233,7 @@ class JevApp(App[None]):
         return "\n\n".join(sections)
 
     def action_clear(self) -> None:
+        self.history.clear()
         self.query_one("#answer", Markdown).update("*Conversation cleared.*")
         self.query_one("#decision-content", Markdown).update("*Waiting for a question.*")
         self.query_one("#status", Static).update("Ready")

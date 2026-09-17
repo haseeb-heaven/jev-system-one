@@ -16,30 +16,51 @@ class DecisionEngine:
             timeout=30.0,
         )
 
-    def decide(self, question: str) -> dict[str, Any]:
+    def decide(
+        self,
+        question: str,
+        history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        state: dict[str, Any] = {
+            "user_question": question,
+            "conversation_history": [
+                {"question": item.get("question", ""), "answer": item.get("answer", "")}
+                for item in (history or [])
+            ],
+        }
         return self._ask(
-            state={"user_question": question},
+            state=state,
             questions={
                 "response_mode": Choice(
-                    instructions="What response mode should OpenAI use for `user_question`?",
+                    instructions=(
+                        "What response mode should OpenAI use for `user_question`, "
+                        "taking into account `conversation_history` if this is a follow-up?"
+                    ),
                     criteria={
                         "factual": "Provide factual explanation or direct information.",
                         "instructional": "Provide steps, guidance, or advice.",
                         "creative": "Provide original ideas, writing, or brainstorming.",
                         "opinion": "Provide a recommendation with stated trade-offs.",
                         "clarify": (
-                            "Ask a concise follow-up because the request is materially unclear."
+                            "Ask a concise follow-up because the request is materially unclear "
+                            "even with `conversation_history`."
                         ),
                     },
                 ),
                 "requires_clarification": Noul(
-                    instructions="Does `user_question` require a clarification before answering?",
+                    instructions=(
+                        "Does `user_question` require clarification before answering, or is it "
+                        "sufficiently clear from `conversation_history`?"
+                    ),
                     criteria={
                         "true": (
-                            "A material detail is missing and guessing would make the answer "
-                            "misleading."
+                            "A material detail is missing and cannot be resolved from "
+                            "`conversation_history`."
                         ),
-                        "false": "The question can be answered usefully without a follow-up.",
+                        "false": (
+                            "The question can be answered usefully with available context "
+                            "without a follow-up."
+                        ),
                     },
                 ),
                 "requires_uncertainty_notice": Noul(
@@ -71,16 +92,25 @@ class DecisionEngine:
         question: str,
         draft: dict[str, Any],
         routing: dict[str, Any],
+        history: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        state: dict[str, Any] = {
+            "user_question": question,
+            "conversation_history": [
+                {"question": item.get("question", ""), "answer": item.get("answer", "")}
+                for item in (history or [])
+            ],
+            "jev_routing_decision": routing,
+            "openai_draft": draft,
+        }
         return self._ask(
-            state={
-                "user_question": question,
-                "jev_routing_decision": routing,
-                "openai_draft": draft,
-            },
+            state=state,
             questions={
                 "answers_question": Noul(
-                    instructions="Does `openai_draft.answer` directly answer `user_question`?",
+                    instructions=(
+                        "Does `openai_draft.answer` directly answer `user_question` in the context "
+                        "of `conversation_history`?"
+                    ),
                     criteria={
                         "true": "The draft addresses the actual request with relevant information.",
                         "false": "The draft is off-topic, evasive, or incomplete for the request.",
@@ -101,7 +131,8 @@ class DecisionEngine:
                 ),
                 "answer_quality": Score(
                     instructions=(
-                        "How useful and complete is `openai_draft.answer` for `user_question`?"
+                        "How useful and complete is `openai_draft.answer` for `user_question` "
+                        "in the context of `conversation_history`?"
                     ),
                     criteria=[
                         "poor: incorrect, irrelevant, or unusable",
