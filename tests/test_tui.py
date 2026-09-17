@@ -16,12 +16,18 @@ def test_tui_starts(monkeypatch):
             pilot.app._render_result(
                 "first question",
                 {"answer": "first answer", "assumptions": []},
-                {"model": "jev-test", "answers": {}},
+                {
+                    "routing": {"model": "jev-test", "answers": {}},
+                    "review": {"model": "jev-test", "answers": {}},
+                },
             )
             pilot.app._render_result(
                 "second question",
                 {"answer": "second answer", "assumptions": []},
-                {"model": "jev-test", "answers": {}},
+                {
+                    "routing": {"model": "jev-test", "answers": {}},
+                    "review": {"model": "jev-test", "answers": {}},
+                },
             )
             await pilot.pause()
             answer = pilot.app.query_one("#answer").source

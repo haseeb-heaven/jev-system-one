@@ -20,49 +20,58 @@ A polished terminal interface where OpenAI generates useful answers and TypeSafe
 ```text
 Plain-English question
         ↓
-OpenAI generates a structured answer
+Jev decides response mode, clarification, uncertainty, and depth
         ↓
-Jev evaluates the question and answer
+OpenAI drafts from Jev's decision
+        ↓
+Jev reviews and scores the draft
+        ↓
+OpenAI finalizes from Jev's review
         ↓
 The TUI presents the answer and decision report side by side
 ```
 
 ## Jev as the decision engine
 
-[TypeSafe](https://typesafe.ai/) System One models are designed for fast, structured software decisions. [Jev](https://docs.typesafe.ai/concepts/system-one) does not generate the user-facing answer; OpenAI does that. Jev receives the user question and OpenAI answer as state, then returns typed judgments with probabilities and confidence that the application can display and use.
+[TypeSafe](https://typesafe.ai/) System One models are designed for fast, structured software decisions. [Jev](https://docs.typesafe.ai/concepts/system-one) is the authority for response policy and quality review; it returns typed judgments, probabilities, and confidence. OpenAI never classifies the request or sets the policy—it only drafts and finalizes wording from Jev's decisions.
 
 ```mermaid
 flowchart TD
-    U[Human asks a question in plain English] --> O[OpenAI generates a structured answer]
-    U --> S[Application builds evaluation state]
-    O --> S
-    S --> J[TypeSafe Jev: System One decision engine]
-    J --> C[Choice: question type]
-    J --> N1[Noul: does the answer address the question?]
-    J --> N2[Noul: are unsupported claims likely?]
-    J --> Q[Score: answer quality]
-    O --> T[TUI answer pane]
-    C --> R[TUI decision report]
-    N1 --> R
-    N2 --> R
-    Q --> R
+    U[Human asks a question in plain English] --> J1[TypeSafe Jev: routing decision]
+    J1 --> D1[Choice: response mode]
+    J1 --> D2[Noul: clarification required]
+    J1 --> D3[Noul: uncertainty notice required]
+    J1 --> D4[Score: response depth]
+    J1 --> O1[OpenAI drafts using Jev policy]
+    O1 --> J2[TypeSafe Jev: draft review]
+    J2 --> R1[Noul: answers the question]
+    J2 --> R2[Noul: unsupported claims]
+    J2 --> R3[Score: answer quality]
+    J2 --> R4[Noul: revision required]
+    J2 --> O2[OpenAI finalizes using Jev review]
+    O2 --> T[TUI answer pane]
+    J1 --> Report[TUI decision trail]
+    J2 --> Report
 ```
 
-Jev makes four typed judgments for every answer:
+Jev makes typed decisions at two points in every request:
 
 | Decision | Primitive | What it measures |
 | --- | --- | --- |
-| Question type | Choice | Factual, instructional, creative, opinion, or unclear |
-| Answers the question | Noul | Probability that the answer directly addresses the request |
+| Response mode | Choice | Factual, instructional, creative, opinion, or clarification |
+| Clarification / uncertainty | Noul | Probability that a follow-up or explicit uncertainty notice is required |
+| Response depth | Score | Brief, standard, or detailed answer policy |
+| Answers the question | Noul | Probability that the draft directly addresses the request |
 | Unsupported claims | Noul | Probability that uncertain claims are presented as facts |
 | Answer quality | Score | Usefulness and completeness on an ordered four-level rubric |
+| Revision required | Noul | Probability that OpenAI should materially revise the draft |
 
 The report includes probabilities, confidence, model version, token usage, and the TypeSafe request ID.
 
 ## Features
 
 - Full-screen Textual interface with responsive answer and decision panes
-- Animated OpenAI → Jev processing state and progress bar
+- Animated Jev → OpenAI → Jev → OpenAI processing state and progress bar
 - Mouse wheel, two-finger trackpad, and draggable scrollbar support
 - A clean current-question view that replaces stale results
 - Non-interactive mode for scripts and shell workflows
@@ -128,7 +137,7 @@ src/jev_system_one/
 ├── llm.py             # OpenAI structured answer generation
 ├── logging_setup.py   # Application and SDK logging
 ├── tui.py             # Textual interface and background workers
-└── workflow.py        # OpenAI → Jev orchestration
+└── workflow.py        # Jev → OpenAI → Jev → OpenAI orchestration
 ```
 
 The TypeSafe integration uses the official Python SDK with `TypeSafeClient`, `Choice`, `Noul`, `Score`, and `RetryPolicy`.

@@ -21,6 +21,7 @@ from .config import ConfigError, Settings
 from .jev import DecisionEngine
 from .llm import Planner
 from .logging_setup import configure_logging
+from .workflow import Workflow
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class ScrollPane(VerticalScroll):
 
 class JevApp(App[None]):
     TITLE = "Jev System One"
-    SUB_TITLE = "OpenAI answers · Jev decides"
+    SUB_TITLE = "Jev decides · OpenAI writes"
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
@@ -80,8 +81,8 @@ class JevApp(App[None]):
         yield Header(show_clock=True)
         with Vertical(id="shell"):
             yield Static(
-                "Ask anything. OpenAI writes the answer; Jev evaluates its quality "
-                "and reliability.",
+                "Jev decides the policy and reviews the draft. OpenAI only writes from "
+                "those decisions.",
                 id="hero",
             )
             with Horizontal(id="workspace"):
@@ -90,11 +91,11 @@ class JevApp(App[None]):
                     with ScrollPane(id="conversation"):
                         yield Markdown("*Your answer will appear here.*", id="answer")
                 with Vertical(id="decision-pane", classes="pane"):
-                    yield Static("JEV DECISION REPORT", classes="pane-title")
+                    yield Static("JEV DECISION TRAIL", classes="pane-title")
                     with ScrollPane(id="decisions"):
                         yield Markdown("*Waiting for a question.*", id="decision-content")
             yield LoadingIndicator(id="thinking")
-            yield ProgressBar(total=2, show_eta=False, id="progress")
+            yield ProgressBar(total=4, show_eta=False, id="progress")
             yield Static("Ready", id="status")
         with Horizontal(id="composer"):
             yield Input(placeholder="Ask a general question…", id="question")
@@ -130,7 +131,7 @@ class JevApp(App[None]):
         self.query_one("#progress", ProgressBar).update(progress=0)
         self.query_one("#answer", Markdown).update(f"## You\n\n{question}\n\n*Thinking…*")
         self.query_one("#decision-content", Markdown).update("*Waiting for Jev…*")
-        self.query_one("#status", Static).update("OpenAI is thinking…")
+        self.query_one("#status", Static).update("Jev is deciding the response policy…")
         self.process_question(question)
 
     @work(thread=True, exclusive=True, exit_on_error=False)
@@ -138,11 +139,21 @@ class JevApp(App[None]):
         assert self.settings is not None
         try:
             planner = Planner(self.settings.llm_api_key, self.settings.llm_model)
-            response = planner.answer(question)
-            self.call_from_thread(self._stage, 1, "Jev is evaluating the answer…")
             with DecisionEngine(self.settings.jev_api_key, self.settings.jev_model) as jev:
-                decisions = jev.assess(question, response)
-            self.call_from_thread(self._render_result, question, response, decisions)
+                result = Workflow(planner, jev).run(
+                    question,
+                    on_progress=lambda step, message: self.call_from_thread(
+                        self._stage,
+                        step,
+                        message,
+                    ),
+                )
+            self.call_from_thread(
+                self._render_result,
+                question,
+                result.response,
+                result.decisions,
+            )
         except Exception as exc:
             log.exception("question processing failed")
             self.call_from_thread(self._render_error, str(exc))
@@ -170,8 +181,8 @@ class JevApp(App[None]):
         self.query_one("#decision-content", Markdown).update(self._decision_markdown(decisions))
         self.query_one("#conversation", ScrollPane).scroll_home(animate=False)
         self.query_one("#decisions", ScrollPane).scroll_home(animate=False)
-        self.query_one("#progress", ProgressBar).update(progress=2)
-        self._finish("Complete · answer and Jev report ready")
+        self.query_one("#progress", ProgressBar).update(progress=4)
+        self._finish("Complete · Jev decisions guided the final answer")
 
     def _render_error(self, message: str) -> None:
         self._finish(f"Error · {message}")
@@ -187,14 +198,18 @@ class JevApp(App[None]):
 
     @staticmethod
     def _decision_markdown(decisions: dict[str, Any]) -> str:
-        answers = decisions.get("answers", {})
-        sections = [f"**Model:** `{decisions.get('model', 'unknown')}`"]
-        for name, value in answers.items():
-            title = name.replace("_", " ").title()
-            sections.append(f"### {title}\n\n```json\n{json.dumps(value, indent=2)}\n```")
-        request_id = decisions.get("request_id")
-        if request_id:
-            sections.append(f"**Request ID:** `{request_id}`")
+        sections = []
+        for stage, decision in decisions.items():
+            title = stage.replace("_", " ").title()
+            sections.append(f"## Jev {title}\n\n**Model:** `{decision.get('model', 'unknown')}`")
+            for name, value in decision.get("answers", {}).items():
+                answer_title = name.replace("_", " ").title()
+                sections.append(
+                    f"### {answer_title}\n\n```json\n{json.dumps(value, indent=2)}\n```"
+                )
+            request_id = decision.get("request_id")
+            if request_id:
+                sections.append(f"**Request ID:** `{request_id}`")
         return "\n\n".join(sections)
 
     def action_clear(self) -> None:

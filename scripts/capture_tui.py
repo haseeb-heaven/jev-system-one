@@ -21,25 +21,33 @@ async def capture() -> None:
                 ],
             },
             {
-                "model": "jev-1.13.0",
-                "request_id": "req_preview",
-                "answers": {
-                    "question_type": {
-                        "type": "choice",
-                        "choice": "instructional",
-                        "confidence": 0.94,
-                        "probabilities": {
-                            "instructional": 0.96,
-                            "factual": 0.03,
-                            "opinion": 0.01,
+                "routing": {
+                    "model": "jev-1.13.0",
+                    "request_id": "req_preview_routing",
+                    "answers": {
+                        "response_mode": {
+                            "type": "choice",
+                            "choice": "instructional",
+                            "confidence": 0.94,
+                            "probabilities": {
+                                "instructional": 0.96,
+                                "factual": 0.03,
+                                "opinion": 0.01,
+                            },
                         },
+                        "requires_clarification": {"type": "noul", "noul": 0.04},
                     },
-                    "answers_question": {"type": "noul", "noul": 0.97},
-                    "contains_unsupported_claims": {"type": "noul", "noul": 0.08},
-                    "answer_quality": {
-                        "type": "score",
-                        "score": 2.78,
-                        "confidence": 0.81,
+                },
+                "review": {
+                    "model": "jev-1.13.0",
+                    "request_id": "req_preview_review",
+                    "answers": {
+                        "answer_quality": {
+                            "type": "score",
+                            "score": 2.78,
+                            "confidence": 0.81,
+                        },
+                        "requires_revision": {"type": "noul", "noul": 0.08},
                     },
                 },
             },

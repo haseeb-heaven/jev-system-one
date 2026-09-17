@@ -1,10 +1,7 @@
 import json
-import logging
 from typing import Any
 
 from openai import OpenAI
-
-log = logging.getLogger(__name__)
 
 
 class LLMError(RuntimeError):
@@ -16,9 +13,62 @@ class Planner:
         self.client = OpenAI(api_key=api_key)
         self.model = model
 
-    def answer(self, question: str) -> dict[str, Any]:
+    def draft(
+        self,
+        question: str,
+        routing: dict[str, Any],
+        routing_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._generate(
+            "Write a draft answer using Jev's routing decision as the sole authority for "
+            "response mode, clarification, uncertainty, and depth.",
+            {
+                "user_question": question,
+                "jev_routing_decision": routing,
+                "jev_routing_policy": routing_policy,
+                "rules": [
+                    "Do not independently classify the question or decide response policy.",
+                    "Follow the Jev decision probabilities and scores supplied in the state.",
+                    "Generate answer text only; Jev will review it before it is shown.",
+                ],
+            },
+        )
+
+    def finalize(
+        self,
+        question: str,
+        routing: dict[str, Any],
+        routing_policy: dict[str, Any],
+        draft: dict[str, Any],
+        review: dict[str, Any],
+        review_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._generate(
+            "Write the final answer. Jev owns every decision: use its routing decision and "
+            "draft review exactly as supplied. Do not override them or make new policy decisions.",
+            {
+                "user_question": question,
+                "jev_routing_decision": routing,
+                "jev_routing_policy": routing_policy,
+                "openai_draft": draft,
+                "jev_draft_review": review,
+                "jev_review_policy": review_policy,
+                "rules": [
+                    "Use the Jev answer-quality score and probabilities to revise the draft.",
+                    "If Jev flags unsupported claims, remove or qualify them.",
+                    (
+                        "If Jev requires clarification, ask the concise clarification instead "
+                        "of guessing."
+                    ),
+                    "Return answer wording only; do not explain or alter Jev's decisions.",
+                ],
+            },
+        )
+
+    def _generate(self, instruction: str, state: dict[str, Any]) -> dict[str, Any]:
         prompt = {
-            "question": question,
+            "instruction": instruction,
+            "state": state,
             "output": {
                 "answer": "A direct, useful answer in plain language.",
                 "summary": "One-sentence summary.",
@@ -26,8 +76,6 @@ class Planner:
             },
             "rules": [
                 "Return valid JSON only.",
-                "Answer the user's actual question.",
-                "Say when information is uncertain or unavailable.",
                 "Keep assumptions empty when none are needed.",
             ],
         }
@@ -38,7 +86,7 @@ class Planner:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a precise, concise general-purpose assistant.",
+                        "content": "You write answers; Jev is the decision authority.",
                     },
                     {"role": "user", "content": json.dumps(prompt)},
                 ],
