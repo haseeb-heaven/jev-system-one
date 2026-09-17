@@ -27,6 +27,27 @@ Jev evaluates the question and answer
 The TUI presents the answer and decision report side by side
 ```
 
+## Jev as the decision engine
+
+[TypeSafe](https://typesafe.ai/) System One models are designed for fast, structured software decisions. [Jev](https://docs.typesafe.ai/concepts/system-one) does not generate the user-facing answer; OpenAI does that. Jev receives the user question and OpenAI answer as state, then returns typed judgments with probabilities and confidence that the application can display and use.
+
+```mermaid
+flowchart TD
+    U[Human asks a question in plain English] --> O[OpenAI generates a structured answer]
+    U --> S[Application builds evaluation state]
+    O --> S
+    S --> J[TypeSafe Jev: System One decision engine]
+    J --> C[Choice: question type]
+    J --> N1[Noul: does the answer address the question?]
+    J --> N2[Noul: are unsupported claims likely?]
+    J --> Q[Score: answer quality]
+    O --> T[TUI answer pane]
+    C --> R[TUI decision report]
+    N1 --> R
+    N2 --> R
+    Q --> R
+```
+
 Jev makes four typed judgments for every answer:
 
 | Decision | Primitive | What it measures |
@@ -63,6 +84,15 @@ Create `.env` in the project root:
 ```dotenv
 JEV_API_KEY=your_jev_api_key
 OPENAI_API_KEY=your_openai_api_key
+JEV_MODEL=jev-latest
+LLM_MODEL=gpt-4o-mini
+LOG_LEVEL=INFO
+```
+
+You can start from the checked-in template:
+
+```bash
+cp .env.example .env
 ```
 
 Launch the interactive interface:
