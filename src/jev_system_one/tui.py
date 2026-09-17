@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any
 
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -25,6 +25,16 @@ from .logging_setup import configure_logging
 log = logging.getLogger(__name__)
 
 
+class ScrollPane(VerticalScroll):
+    def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
+        self.scroll_relative(y=max(3, abs(event.delta_y) * 3), immediate=True)
+        event.stop()
+
+    def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
+        self.scroll_relative(y=-max(3, abs(event.delta_y) * 3), immediate=True)
+        event.stop()
+
+
 class JevApp(App[None]):
     TITLE = "Jev System One"
     SUB_TITLE = "OpenAI answers · Jev decides"
@@ -33,8 +43,6 @@ class JevApp(App[None]):
         Binding("ctrl+q", "quit", "Quit"),
         Binding("ctrl+l", "clear", "Clear"),
         Binding("ctrl+r", "focus_input", "Ask"),
-        Binding("pageup", "scroll_answer_up", "Answer up", priority=True),
-        Binding("pagedown", "scroll_answer_down", "Answer down", priority=True),
     ]
     CSS = """
     Screen { background: #080b12; color: #e6edf7; }
@@ -47,6 +55,13 @@ class JevApp(App[None]):
     #decision-pane { width: 1fr; }
     .pane-title { height: 2; color: #71d7ff; text-style: bold; }
     #conversation, #decisions { height: 1fr; }
+    ScrollPane {
+        overflow-y: scroll;
+        scrollbar-size-vertical: 2;
+        scrollbar-color: #22d3ee;
+        scrollbar-color-hover: #67e8f9;
+        scrollbar-color-active: #a78bfa;
+    }
     #thinking { height: 3; display: none; color: #a78bfa; }
     #progress { height: 1; display: none; color: #22d3ee; background: #162033; }
     #status { height: 2; color: #93a4bf; content-align: left middle; }
@@ -72,11 +87,11 @@ class JevApp(App[None]):
             with Horizontal(id="workspace"):
                 with Vertical(id="conversation-pane", classes="pane"):
                     yield Static("CONVERSATION", classes="pane-title")
-                    with VerticalScroll(id="conversation"):
+                    with ScrollPane(id="conversation"):
                         yield Markdown("*Your answer will appear here.*", id="answer")
                 with Vertical(id="decision-pane", classes="pane"):
                     yield Static("JEV DECISION REPORT", classes="pane-title")
-                    with VerticalScroll(id="decisions"):
+                    with ScrollPane(id="decisions"):
                         yield Markdown("*Waiting for a question.*", id="decision-content")
             yield LoadingIndicator(id="thinking")
             yield ProgressBar(total=2, show_eta=False, id="progress")
@@ -153,8 +168,8 @@ class JevApp(App[None]):
         )
         self.query_one("#answer", Markdown).update(content)
         self.query_one("#decision-content", Markdown).update(self._decision_markdown(decisions))
-        self.query_one("#conversation", VerticalScroll).scroll_home(animate=False)
-        self.query_one("#decisions", VerticalScroll).scroll_home(animate=False)
+        self.query_one("#conversation", ScrollPane).scroll_home(animate=False)
+        self.query_one("#decisions", ScrollPane).scroll_home(animate=False)
         self.query_one("#progress", ProgressBar).update(progress=2)
         self._finish("Complete · answer and Jev report ready")
 
@@ -189,13 +204,3 @@ class JevApp(App[None]):
 
     def action_focus_input(self) -> None:
         self.query_one("#question", Input).focus()
-
-    def action_scroll_answer_up(self) -> None:
-        conversation = self.query_one("#conversation", VerticalScroll)
-        conversation.focus()
-        conversation.scroll_page_up(animate=True)
-
-    def action_scroll_answer_down(self) -> None:
-        conversation = self.query_one("#conversation", VerticalScroll)
-        conversation.focus()
-        conversation.scroll_page_down(animate=True)
